@@ -14,7 +14,10 @@
 
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type FileInfo struct {
 	Path       string    `json:"path,omitempty"`
@@ -28,6 +31,24 @@ type FileInfo struct {
 type FileMetadata struct {
 	Path       string `json:"path,omitempty"`
 	Permission `json:",inline"`
+	ModeSet    bool `json:"-"
+}
+
+// UnmarshalJSON preserves whether mode was supplied so an explicit zero
+// permission can be distinguished from an omitted mode.
+func (m *FileMetadata) UnmarshalJSON(data []byte) error {
+	type metadataAlias FileMetadata
+	var decoded metadataAlias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	_, decoded.ModeSet = fields["mode"]
+	*m = FileMetadata(decoded)
+	return nil
 }
 
 type Permission struct {
