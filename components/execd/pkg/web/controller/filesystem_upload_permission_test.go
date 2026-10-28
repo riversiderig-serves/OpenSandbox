@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+	"strconv"
 
 	"github.com/alibaba/opensandbox/execd/pkg/web/model"
 )
@@ -32,7 +33,7 @@ func TestFileMetadataTracksModePresence(t *testing.T) {
 		{name: "omitted", json: `{"path":"/tmp/file"}`, want: false, mode: 0},
 		{name: "explicit zero", json: `{"path":"/tmp/file","mode":0}`, want: true, mode: 0},
 		{name: "nonzero", json: `{"path":"/tmp/file","mode":755}`, want: true, mode: 755},
-		{name: "null treated as supplied", json: `{"path":"/tmp/file","mode":null}`, want: true, mode: 0},
+		{name: "null treated as omitted", json: `{"path":"/tmp/file","mode":null}`, want: false, mode: 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -64,7 +65,7 @@ func TestParseUploadMode(t *testing.T) {
 		{value: 7777, want: 0777 | os.ModeSetuid | os.ModeSetgid | os.ModeSticky},
 	}
 	for _, tt := range tests {
-		t.Run(string(rune('0'+len(tests))), func(t *testing.T) {
+		t.Run(strconv.Itoa(tt.value), func(t *testing.T) {
 			got, err := parseUploadMode(tt.value)
 			if err != nil {
 				t.Fatalf("parseUploadMode(%d): %v", tt.value, err)
