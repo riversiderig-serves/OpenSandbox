@@ -76,6 +76,11 @@ func ChmodFile(file string, perms model.Permission) error {
 	return SetFileOwnership(abs, perms.Owner, perms.Group)
 }
 
+// ValidateFileOwnership is a no-op on Windows, where POSIX ownership metadata is ignored.
+func ValidateFileOwnership(_ string, _ string) error {
+	return nil
+}
+
 // SetFileOwnership is a placeholder on Windows where POSIX ownership is not supported.
 func SetFileOwnership(_ string, _ string, _ string) error {
 	// TODO: add Windows ACL support if needed.
