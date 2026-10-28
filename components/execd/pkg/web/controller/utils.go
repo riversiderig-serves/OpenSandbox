@@ -76,6 +76,29 @@ func ChmodFile(file string, perms model.Permission) error {
 	return SetFileOwnership(abs, perms.Owner, perms.Group)
 }
 
+// ValidateFileOwnership resolves owner and group names without modifying the filesystem.
+func ValidateFileOwnership(owner string, group string) error {
+	if owner != "" {
+		userInfo, err := user.Lookup(owner)
+		if err != nil {
+			return fmt.Errorf("failed to lookup user %s: %w", owner, err)
+		}
+		if _, err := strconv.Atoi(userInfo.Uid); err != nil {
+			return fmt.Errorf("failed to convert uid for user %s: %w", owner, err)
+		}
+	}
+	if group != "" {
+		groupInfo, err := user.LookupGroup(group)
+		if err != nil {
+			return fmt.Errorf("failed to lookup group %s: %w", group, err)
+		}
+		if _, err := strconv.Atoi(groupInfo.Gid); err != nil {
+			return fmt.Errorf("failed to convert gid for group %s: %w", group, err)
+		}
+	}
+	return nil
+}
+
 func SetFileOwnership(absPath string, owner string, group string) error {
 	if owner == "" && group == "" {
 		return nil
