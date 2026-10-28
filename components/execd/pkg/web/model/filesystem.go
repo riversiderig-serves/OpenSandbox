@@ -46,7 +46,9 @@ func (m *FileMetadata) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
-	_, decoded.ModeSet = fields["mode"]
+	if rawMode, ok := fields["mode"]; ok && string(rawMode) != "null" {
+		decoded.ModeSet = true
+	}
 	*m = FileMetadata(decoded)
 	return nil
 }
