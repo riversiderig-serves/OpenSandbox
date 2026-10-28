@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -97,6 +98,14 @@ func (c *FilesystemController) processUploadPair(metadataHeader, fileHeader *mul
 		return uerr
 	}
 
+	if err := validateUploadPermission(meta.Permission, meta.ModeSet); err != nil {
+		return newUploadError(
+			http.StatusBadRequest,
+			model.ErrorCodeInvalidFileMetadata,
+			fmt.Sprintf("invalid file permission metadata: %v", err),
+		)
+	}
+
 	resolvedPath, uerr := resolveUploadTarget(meta.Path, meta.Permission)
 	if uerr != nil {
 		return uerr
@@ -106,7 +115,7 @@ func (c *FilesystemController) processUploadPair(metadataHeader, fileHeader *mul
 		return uerr
 	}
 
-	return applyUploadPermission(resolvedPath, meta.Permission)
+	return applyUploadPermission(resolvedPath, meta.Permission, meta.ModeSet)
 }
 
 func parseUploadMetadata(header *multipart.FileHeader) (*model.FileMetadata, *uploadError) {
@@ -216,11 +225,58 @@ func writeUploadFile(resolvedPath string, fileHeader *multipart.FileHeader) *upl
 // (virtio-fs, 9pfs). ChmodFile always invokes chown under the hood, so a
 // freshly-created dirent that has not yet propagated will surface as ENOENT
 // here even though the file is fully written and synced.
-func applyUploadPermission(resolvedPath string, permission model.Permission) *uploadError {
-	chmodErr := ChmodFile(resolvedPath, permission)
+
+// parseUploadMode interprets the wire value as octal digits (for example,
+// 755 means 0755). Go represents POSIX special bits using ModeSetuid,
+// ModeSetgid and ModeSticky rather than the low permission bits.
+func parseUploadMode(mode int) (os.FileMode, error) {
+	if mode < 0 {
+		return 0, fmt.Errorf("mode must be an octal value between 0 and 7777")
+	}
+	parsed, err := strconv.ParseUint(strconv.Itoa(mode), 8, 32)
+	if err != nil || parsed > 07777 {
+		return 0, fmt.Errorf("mode %d is invalid; expected octal digits from 0 through 7777", mode)
+	}
+	result := os.FileMode(parsed & 0777)
+	if parsed&04000 != 0 {
+		result |= os.ModeSetuid
+	}
+	if parsed&02000 != 0 {
+		result |= os.ModeSetgid
+	}
+	if parsed&01000 != 0 {
+		result |= os.ModeSticky
+	}
+	return result, nil
+}
+
+func validateUploadPermission(permission model.Permission, modeSet bool) error {
+	if modeSet {
+		if _, err := parseUploadMode(permission.Mode); err != nil {
+			return err
+		}
+	}
+	return ValidateFileOwnership(permission.Owner, permission.Group)
+}
+
+func applyUploadPermission(resolvedPath string, permission model.Permission, modeSet bool) *uploadError {
+	apply := func() error {
+		if err := SetFileOwnership(resolvedPath, permission.Owner, permission.Group); err != nil {
+			return err
+		}
+		if modeSet {
+			mode, err := parseUploadMode(permission.Mode)
+			if err != nil {
+				return err
+			}
+			return os.Chmod(resolvedPath, mode)
+		}
+		return nil
+	}
+	chmodErr := apply()
 	if chmodErr != nil {
 		time.Sleep(20 * time.Millisecond)
-		chmodErr = ChmodFile(resolvedPath, permission)
+		chmodErr = apply()
 	}
 	if chmodErr != nil {
 		return newUploadError(
